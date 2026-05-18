@@ -64,7 +64,7 @@ def main():
     layer_keep = "GHS_UCDB_THEME_GEOGRAPHY_GLOBE_R2024A"
     col_keep = ['ID_UC_G0', 'GC_UCN_MAI_2025', 'GC_CNT_GAD_2025', 
                 'GC_UCA_KM2_2025', 'GC_POP_TOT_2025', 'geometry']
-    grid_sizes = [100, 250, 500]
+    grid_sizes = [100, 250, 500, 750, 1000]  # Grid sizes in meters
 
     # 1. Memory Optimization: Filter columns early during I/O if driver supports it, 
     # or drop unnecessary columns immediately to save RAM

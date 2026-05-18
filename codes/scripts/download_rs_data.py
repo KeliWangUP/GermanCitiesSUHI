@@ -56,7 +56,7 @@ def add_LST(image):
 def filter_landsat_image(geometry, start_date, end_date):
     
     date_filter = ee.Filter.date(start_date, end_date)
-    summer_filter = ee.Filter.calendarRange(6, 9, 'month')
+    summer_filter = ee.Filter.calendarRange(6, 8, 'month')
 
     l8 = ee.ImageCollection('LANDSAT/LC08/C02/T1_L2') \
         .filterBounds(geometry) \
