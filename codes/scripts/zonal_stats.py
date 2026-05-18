@@ -120,3 +120,9 @@ def main():
 
         # Read grid and raster
         grid = read_grid(grid_path)
+
+if __name__ == '__main__':
+    with multiprocessing.Pool(processes=64) as pool:
+        pool.map(main, [None] * 3)  # Run main() for each grid size (100m, 250m, 500m)
+
+    print('All cities are done')
