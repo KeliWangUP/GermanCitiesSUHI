@@ -121,30 +121,30 @@ def main():
         lst_image = filter_landsat_image(ee_polygon, start_date='2018-06-01', end_date='2022-09-01')                
         
         geemap.ee_export_image_to_drive(lst_image, crs=CRS, description=f"{city_id}_landsat", 
-                                        fileNamePrefix=f"{city_id}_lst", 
+                                        fileNamePrefix=f"{city_id}_lst_new", 
                                         folder=dir_name, 
                                         region=ee_polygon, 
                                         scale=30)
-        geemap.ee_export_image_to_drive(world_cover_2021, crs=CRS, description=f"{city_id}_worldcover2021", 
-                                        fileNamePrefix=f"{city_id}_worldcover2021", 
-                                        folder= dir_name, 
-                                        region=ee_polygon, 
-                                        scale=10)
-        geemap.ee_export_image_to_drive(built_up_area, crs=CRS, description=f"{city_id}_built_up", 
-                                        fileNamePrefix=f"{city_id}_built_up", 
-                                        folder= dir_name, 
-                                        region=ee_polygon,
-                                        scale=10)
-        geemap.ee_export_image_to_drive(building_heights_2018, crs=CRS, description=f"{city_id}_building_heights_2018", 
-                                        fileNamePrefix=f"{city_id}_building_heights_2018", 
-                                        folder= dir_name, 
-                                        region=ee_polygon,
-                                        scale=10)
-        geemap.ee_export_image_to_drive(gaia_2018, crs=CRS, description=f"{city_id}_gaia_2018", 
-                                        fileNamePrefix=f"{city_id}_gaia_2018", 
-                                        folder= dir_name, 
-                                        region=ee_polygon,
-                                        scale=30)
+        # geemap.ee_export_image_to_drive(world_cover_2021, crs=CRS, description=f"{city_id}_worldcover2021", 
+        #                                 fileNamePrefix=f"{city_id}_worldcover2021", 
+        #                                 folder= dir_name, 
+        #                                 region=ee_polygon, 
+        #                                 scale=10)
+        # geemap.ee_export_image_to_drive(built_up_area, crs=CRS, description=f"{city_id}_built_up", 
+        #                                 fileNamePrefix=f"{city_id}_built_up", 
+        #                                 folder= dir_name, 
+        #                                 region=ee_polygon,
+        #                                 scale=10)
+        # geemap.ee_export_image_to_drive(building_heights_2018, crs=CRS, description=f"{city_id}_building_heights_2018", 
+        #                                 fileNamePrefix=f"{city_id}_building_heights_2018", 
+        #                                 folder= dir_name, 
+        #                                 region=ee_polygon,
+        #                                 scale=10)
+        # geemap.ee_export_image_to_drive(gaia_2018, crs=CRS, description=f"{city_id}_gaia_2018", 
+        #                                 fileNamePrefix=f"{city_id}_gaia_2018", 
+        #                                 folder= dir_name, 
+        #                                 region=ee_polygon,
+        #                                 scale=30)
 
 if __name__ == "__main__":
     main()
