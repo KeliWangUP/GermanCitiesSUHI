@@ -59,9 +59,7 @@ def filter_landsat_image(geometry, start_date, end_date):
 
     median_composite = l8_l9.map(mask_landsat).map(add_LST).select('LST_Celsius').median()
 
-    median_clipped = median_composite.clip(geometry)
-
-    return median_clipped
+    return median_composite
 
 def build_rural_halo(feature, buffer_inner_distance=2000, buffer_distance=5000):
     """
@@ -105,7 +103,7 @@ def get_global_stable_rural_mask(urban_mask_source, dem_mask_source):
     rural_mask = non_urban_mask.multiply(slope_mask).multiply(water_mask)
     return rural_mask.byte()
 
-def generate_final_sampling_mask(selected_polygons, base_rural_mask):
+def generate_final_sampling_mask(selected_polygons, base_rural_mask, target_crs, target_scale):
     """
     Creates a global mask that isolates pure rural pixels within the halo,
     while strictly excluding a 2km zone around ALL selected urban polygons.
@@ -145,9 +143,47 @@ def main():
         ee.Authenticate()
         ee.Initialize()
     
-    CRS = 'EPSG:25832'
-    processed_dir = Path("../../data/processed/").resolve()
-    geojson_files = list(processed_dir.glob("*/bbox.geojson"))
-    if not geojson_files:
-        print("No 'bbox.geojson' files found in the specified directory tree.")
-        return
+    target_scale = 100
+    target_crs = ee.Projection('EPSG:4326').atScale(target_scale)
+    
+    ub_boundary = ee.FeatureCollection('users/keliwang/urban_expansion/GHSL_urban_bounds_2024')
+    points_feature_collection = ee.FeatureCollection('projects/ee-keliwang/assets/de_centroids')
+    selected_polygons = ub_boundary.filterBounds(points_feature_collection.geometry())
+    selected_polygons_5km_buffered = selected_polygons.map(lambda f: f.setGeometry(f.geometry().buffer(5000, 100)))
+
+    climate_zone = ee.Image('users/keliwang/urban_expansion/climate_zone')
+    urban_mask_source = ee.Image("Tsinghua/FROM-GLC/GAIA/v10")
+    dem_mask_source = ee.ImageCollection("COPERNICUS/DEM/GLO30")
+
+    final_rural_mask = get_global_stable_rural_mask(urban_mask_source, dem_mask_source)
+    final_sampling_mask = generate_final_sampling_mask(selected_polygons, final_rural_mask, target_crs, target_scale)
+    urban_mask = ee.Image(0).byte().paint(selected_polygons, 1).setDefaultProjection(crs=target_crs, scale=target_scale)
+    
+    lst_image = filter_landsat_image(selected_polygons_5km_buffered, start_date='2018-06-01', end_date='2022-09-01')
+    rural_lst_band = lst_image.updateMask(final_sampling_mask).rename('LST_Rural')
+    urban_lst_band = lst_image.updateMask(urban_mask).rename('LST_Urban')
+    cz_band = climate_zone.updateMask(urban_mask).rename('CZ')
+
+    stacked_image = ee.Image.cat([rural_lst_band, urban_lst_band, cz_band])
+
+    reducer = (ee.Reducer.mean()
+               .combine(reducer2=ee.Reducer.stdDev(), sharedInputs=True)
+               .combine(reducer2=ee.Reducer.median(), sharedInputs=True)
+               )
+    stats_fc = stacked_image.reduceRegions(
+        collection=selected_polygons_5km_buffered,
+        reducer=reducer,
+        scale=target_scale,
+        crs=target_crs,
+        tileScale=4
+    )
+
+    task = ee.batch.Export.table.toDrive(
+        collection=stats_fc.map(lambda f: f.setGeometry(None)),
+        description='Unified_City_Rural_Level_Stats_DE',
+        fileFormat='CSV'
+    )
+    task.start()
+
+if __name__ == "__main__":
+    main()
