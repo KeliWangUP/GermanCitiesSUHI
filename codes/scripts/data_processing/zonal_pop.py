@@ -55,7 +55,7 @@ def append_population_patch_pipeline(pop_raster_path: str):
         
         # 5. Extract output array and assign back to the native database
         # exact_extract returns columns named like 'sum' or 'sum_band1', we standardize it here
-        output_col_name = f'pop_sum_{size}m'
+        output_col_name = f'pop_sum'
         raw_pop_series = pop_stats.iloc[:, 0] # Fetch the first statistic column safely
         
         # 6. Physical Regularization: Replace any sub-pixel NaN with 0.0 (Unpopulated wilderness zones)
