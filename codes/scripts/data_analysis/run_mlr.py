@@ -1,200 +1,241 @@
-import pandas as pd
+import json
 from pathlib import Path
-from mlr_pipeline import compute_clean_ols
-from vif import filter_features_by_vif_with_protection
+
+import numpy as np
+import pandas as pd
+
+from mlr_pipeline import train_mlr_pipeline
+from pipeline_utils import prepare_scale_dataframe
 
 
-def _parse_model_sort_key(model_key):
-    subset_label, scale_label = model_key
-    scale_value = int(scale_label.rstrip("m"))
-
-    if subset_label == "Global":
-        subset_rank = 0
-        subset_value = 0
-    elif subset_label.startswith("Zone_"):
-        subset_rank = 1
-        subset_value = subset_label.split("Zone_", 1)[1]
-        try:
-            subset_value = int(subset_value)
-        except ValueError:
-            subset_value = str(subset_value)
-    else:
-        subset_rank = 2
-        subset_value = subset_label
-
-    return (scale_value, subset_rank, subset_value)
+def _partition_configs(cz_values: list[str]) -> list[dict]:
+    configs = [
+        {
+            'partition_label': 'Global',
+            'split_strategy': 'stratified_group',
+            'filter_value': None,
+        }
+    ]
+    for value in cz_values:
+        configs.append(
+            {
+                'partition_label': f'Zone_{value}',
+                'split_strategy': 'group',
+                'filter_value': value,
+            }
+        )
+    return configs
 
 
-def _ordered_feature_index(index_values, protected_features):
-    protected_order = [feature for feature in protected_features if feature in index_values]
-    remainder = [feature for feature in index_values if feature not in protected_order and feature != "_Model_R2"]
-    remainder = sorted(remainder)
+def _append_model_to_matrices(
+    coef_matrix: dict,
+    vif_matrix: dict,
+    model_id: str,
+    coef_table_path: str,
+    vif_table_path: str,
+    metrics: dict,
+):
+    coef_table = pd.read_csv(coef_table_path)
+    for _, row in coef_table.iterrows():
+        feature = row['feature']
+        # Use the display string so the exported matrix keeps significance stars.
+        coef_matrix.setdefault(feature, {})[model_id] = row.get('display', row['coefficient'])
 
-    ordered = []
-    if "const" in index_values:
-        ordered.append("const")
-    ordered.extend(protected_order)
-    ordered.extend(feature for feature in remainder if feature != "const")
-    if "_Model_R2" in index_values:
-        ordered.append("_Model_R2")
-    return [feature for feature in ordered if feature in index_values]
+    vif_table = pd.read_csv(vif_table_path)
+    for _, row in vif_table.iterrows():
+        feature = row['feature']
+        vif_matrix.setdefault(feature, {})[model_id] = row.get('vif', np.nan)
+
+    metric_rows = {
+        '_RMSE': metrics['rmse'],
+        '_MAE': metrics['mae'],
+        '_R2': metrics['r2'],
+        '_N_FEATURES': metrics['n_features_selected'],
+    }
+    for metric_name, metric_value in metric_rows.items():
+        coef_matrix.setdefault(metric_name, {})[model_id] = metric_value
+
+
+def _matrix_dict_to_dataframe(matrix_dict: dict, ordered_columns: list[str]) -> pd.DataFrame:
+    matrix_df = pd.DataFrame.from_dict(matrix_dict, orient='index')
+    matrix_df.index.name = 'feature_or_metric'
+    matrix_df = matrix_df.reindex(columns=ordered_columns)
+    return matrix_df.reset_index()
 
 
 def main():
-    SCALES = [100, 250, 500, 750, 1000]
-    UNIFIED_DIR = Path("../../../data/unified_scale_matrices").resolve()
-    name_mapping_dict = {'10': 'tree_cover', 
-                         '20': 'shrubland',
-                         '30': 'grassland',
-                         '40': 'cropland',
-                         '50': 'built_up',
-                         '60': 'bare_land',
-                         '70': 'snow_and_ice',
-                         '80': 'water',
-                         '90': 'wetland'}
-    names_to_drop = ['geometry',
-                     'city_id',
-                     'lst_mean',
-                     'PLAND_cls_90',
-                     'PD_cls_90',
-                     'ED_cls_90',
-                     'LPI_cls_90',
-                     'LSI_cls_90',
-                     'PLAND_cls_20',
-                     'PD_cls_20',
-                     'ED_cls_20',
-                     'LPI_cls_20',
-                     'LSI_cls_20',
-                     'LST_Rural_mean']
-    CORE_STORY_VARIABLES = ["PLAND_tree_cover", "building_height_mean", "pop_sum", "ED_tree_cover"]
-    TARGET_VAR = "SUHI"
+    scales = [100, 250, 500, 750, 1000]
+    unified_dir = Path("../../../data/unified_scale_matrices").resolve()
+    results_dir = Path("../../../data/results/mlr_results").resolve()
 
-    
+    group_col = 'city_id'
+    stratify_col = 'CZ_median'
+    size_col = '__sample_size__'
+    target_col = 'SUHI'
+    vif_threshold = 5.0
+    protected_features = ["PLAND_tree_cover", "building_height_mean", "pop_sum", "ED_tree_cover"]
 
-    # These dictionaries store aligned tables: {(Subset_Level, Scale_Level): {Feature: Value}}
-    master_ols_dict = {}
-    master_vif_dict = {}
+    name_mapping_dict = {
+        '10': 'tree_cover',
+        '20': 'shrubland',
+        '30': 'grassland',
+        '40': 'cropland',
+        '50': 'built_up',
+        '60': 'bare_land',
+        '70': 'snow_and_ice',
+        '80': 'water',
+        '90': 'wetland',
+    }
+    names_to_drop = [
+        'geometry',
+        'lst_mean',
+        'PLAND_cls_90',
+        'PD_cls_90',
+        'ED_cls_90',
+        'LPI_cls_90',
+        'LSI_cls_90',
+        'PLAND_cls_20',
+        'PD_cls_20',
+        'ED_cls_20',
+        'LPI_cls_20',
+        'LSI_cls_20',
+        'LST_Rural_mean',
+    ]
 
-    for scale in SCALES:
-        print(f"\nProcessing scale: {scale}m")
-        # Load scale-specific integrated dataframe
-        file_path = UNIFIED_DIR / f"merged_metrics_{scale}m.parquet"
+    results_dir.mkdir(parents=True, exist_ok=True)
+
+    summary_rows = []
+    coef_matrix = {}
+    vif_matrix = {}
+    model_columns = []
+
+    for scale in scales:
+        print(f"\n[MLR RUN] Processing scale: {scale}m")
+        file_path = unified_dir / f"merged_metrics_{scale}m.parquet"
         if not file_path.exists():
-            print(f"Warning: {file_path} not found.")
+            print(f"[MLR RUN] Warning: {file_path} not found.")
             continue
-        df_scale = pd.read_parquet(file_path)
-        df_scale['CZ_median'] = df_scale['CZ_median'].dropna().astype(float).astype(int).astype(str)
 
-        new_column_names = {}
-        for old_name in df_scale.columns:
-            if '_cls_' in old_name:
-                suffix = old_name.split('_cls_')[-1]
-                new_suffix = name_mapping_dict.get(suffix, suffix)  # 如果找不到映射，保留原样
-                new_name = old_name.replace(f'_cls_{suffix}', f'_{new_suffix}')
-                new_column_names[old_name] = new_name
-        
-        df_scale = df_scale.rename(columns=new_column_names)
-        RAW_FEATURES = [f for f in df_scale.columns if f not in names_to_drop]
-        # drop columns of CZ_median
-        RAW_FEATURES = [f for f in RAW_FEATURES if f != 'CZ_median']
-        df_clean = df_scale[RAW_FEATURES].dropna()
-
-        if len(df_clean) > 10000:
-            df_for_vif = df_clean.sample(n=10000, random_state=42)
-            df_for_vif = df_for_vif[RAW_FEATURES].drop(columns=[TARGET_VAR], errors='ignore')
-        else:
-            df_for_vif = df_clean[RAW_FEATURES].drop(columns=[TARGET_VAR], errors='ignore')
-
-        vif_candidates = [f for f in RAW_FEATURES if f != "SUHI"]
-
-        # ------------------------------------------------------------------
-        # 设定 1：全集 (Global)
-        # ------------------------------------------------------------------
-        # Dynamic VIF filtration (Assume your custom filter function is 'vif_filter')
-        global_vif = filter_features_by_vif_with_protection(
-            df_for_vif,
-            vif_candidates,
-            protected_features=CORE_STORY_VARIABLES,
-            thresh=5.0,
-        )
-        features_global = list(global_vif.keys())
-        global_res = compute_clean_ols(
-            df_clean,
-            features_global,
-            target_col=TARGET_VAR,
-            standardize_x=True,
+        df_scale, features = prepare_scale_dataframe(
+            file_path=file_path,
+            name_mapping_dict=name_mapping_dict,
+            group_col=group_col,
+            target_col=target_col,
+            stratify_col=stratify_col,
+            size_col=size_col,
+            names_to_drop=names_to_drop,
+            keep_stratify_as_feature=False,
         )
 
-        if global_res:
-            # Construct the multi-level tuple column key: (Subset_Level, Scale_Level)
-            col_key = ("Global", f"{scale}m")
-            master_ols_dict[col_key] = global_res
-            master_vif_dict[col_key] = global_vif
+        cz_values = sorted(df_scale[stratify_col].dropna().astype(str).unique().tolist())
+        partition_configs = _partition_configs(cz_values)
 
-        # ------------------------------------------------------------------
-        # 设定 2 & 3：各气候区子集 (Subsets)
-        # ------------------------------------------------------------------
-        climate_zones = df_scale["CZ_median"].unique()
-        for zone in climate_zones:
-            print(f"\n  Processing climate zone: {zone} within scale: {scale}m")
-            df_zone = df_scale[df_scale["CZ_median"] == zone].copy()
-            df_zone = df_zone[RAW_FEATURES].dropna()
-            if len(df_zone) > 10000:
-                df_for_vif = df_zone.sample(n=10000, random_state=42)
-                df_for_vif = df_for_vif[RAW_FEATURES].drop(columns=[TARGET_VAR], errors='ignore')
+        for partition_cfg in partition_configs:
+            partition_label = partition_cfg['partition_label']
+            filter_value = partition_cfg['filter_value']
+            split_strategy = partition_cfg['split_strategy']
+
+            if filter_value is None:
+                df_model = df_scale.copy()
             else:
-                df_for_vif = df_zone[RAW_FEATURES].drop(columns=[TARGET_VAR], errors='ignore')
-            
-            vif_candidates = [f for f in RAW_FEATURES if f != "SUHI"]
+                df_model = df_scale[df_scale[stratify_col].astype(str) == str(filter_value)].copy()
 
-            # Re-run VIF independently since collinearity shifts across spatial zones!
-            zone_vif = filter_features_by_vif_with_protection(
-                df_for_vif,
-                vif_candidates,
-                protected_features=CORE_STORY_VARIABLES,
-                thresh=5.0,
+            if df_model.empty:
+                print(f"[MLR RUN] Skip {partition_label} at {scale}m: empty subset")
+                continue
+
+            model_id = f"{partition_label}_{scale}m"
+            print(f"[MLR RUN] Model: {model_id} | rows={len(df_model)}")
+
+            save_dir = results_dir / partition_label / f"scale_{scale}m"
+            result = train_mlr_pipeline(
+                df=df_model,
+                features=features,
+                target_col=target_col,
+                group_col=group_col,
+                stratify_cols=[stratify_col],
+                split_strategy=split_strategy,
+                size_col=size_col,
+                random_state=42,
+                n_splits=5,
+                test_fold=0,
+                save_dir=str(save_dir),
+                vif_threshold=vif_threshold,
+                protected_features=protected_features,
+                vif_sample_size=10000,
+                vif_random_state=42,
+                verbose=1,
             )
-            features_zone = list(zone_vif.keys())
-            zone_res = compute_clean_ols(
-                df_zone,
-                features_zone,
-                target_col=TARGET_VAR,
-                standardize_x=True,
+
+            metrics = result['metrics']
+            model_columns.append(model_id)
+
+            summary_rows.append(
+                {
+                    'model_id': model_id,
+                    'partition': partition_label,
+                    'scale_m': scale,
+                    'subset_rows': len(df_model),
+                    'n_features_candidate': metrics['n_features_candidate'],
+                    'n_features_selected': metrics['n_features_selected'],
+                    'rmse': metrics['rmse'],
+                    'mae': metrics['mae'],
+                    'r2': metrics['r2'],
+                    'model_path': result['model_path'],
+                    'test_output_path': result['test_output_path'],
+                    'coef_table_path': result['coef_table_path'],
+                    'vif_table_path': result['vif_table_path'],
+                    'model_table_path': result['model_table_path'],
+                    'metrics_path': result['metrics_path'],
+                    'metadata_path': result['metadata_path'],
+                }
             )
 
-            if zone_res:
-                # Construct the multi-level tuple column key
-                col_key = (f"Zone_{zone}", f"{scale}m")
-                master_ols_dict[col_key] = zone_res
-                master_vif_dict[col_key] = zone_vif
-            print(f"  Completed processing for climate zone: {zone} within scale: {scale}m. Results stored.")
-        print(f"Completed processing for scale: {scale}m. Global and zone-specific results stored.")
+            _append_model_to_matrices(
+                coef_matrix=coef_matrix,
+                vif_matrix=vif_matrix,
+                model_id=model_id,
+                coef_table_path=result['coef_table_path'],
+                vif_table_path=result['vif_table_path'],
+                metrics=metrics,
+            )
 
-    # ==================================================================
-    # THE WRAPPING STEP: One-shot construction of aligned OLS and VIF tables
-    # ==================================================================
-    final_matrix_df = pd.DataFrame(master_ols_dict).sort_index()
-    final_vif_df = pd.DataFrame(master_vif_dict).sort_index()
+            print(
+                f"[MLR RUN] Completed {model_id}: RMSE={metrics['rmse']:.4f}, "
+                f"MAE={metrics['mae']:.4f}, R2={metrics['r2']:.4f}"
+            )
 
-    ordered_model_columns = sorted(master_ols_dict.keys(), key=_parse_model_sort_key)
-    final_matrix_df = final_matrix_df.reindex(columns=ordered_model_columns)
-    final_vif_df = final_vif_df.reindex(columns=ordered_model_columns)
+    if not summary_rows:
+        print("[MLR RUN] No models were processed successfully.")
+        return
 
-    final_matrix_df.columns = pd.MultiIndex.from_tuples(
-        final_matrix_df.columns, names=["Subset_Scale", "Grid_Resolution"]
-    )
-    final_vif_df.columns = pd.MultiIndex.from_tuples(
-        final_vif_df.columns, names=["Subset_Scale", "Grid_Resolution"]
-    )
+    summary_df = pd.DataFrame(summary_rows)
+    summary_df = summary_df.sort_values(['partition', 'scale_m']).reset_index(drop=True)
+    summary_csv = results_dir / 'final_mlr_results.csv'
+    summary_df.to_csv(summary_csv, index=False)
 
-    ordered_matrix_index = _ordered_feature_index(final_matrix_df.index.tolist(), CORE_STORY_VARIABLES)
-    ordered_vif_index = _ordered_feature_index(final_vif_df.index.tolist(), CORE_STORY_VARIABLES)
-    final_matrix_df = final_matrix_df.reindex(ordered_matrix_index)
-    final_vif_df = final_vif_df.reindex(ordered_vif_index)
+    for feature_name in vif_matrix.keys():
+        coef_matrix.setdefault(feature_name, {})
 
-    final_matrix_df.to_csv("../../../data/results/final_mlr_results.csv", index=True)
-    final_vif_df.to_csv("../../../data/results/final_mlr_results_vif.csv", index=True)
-    print("Master OLS matrix and VIF table generated successfully.")
+    unique_model_columns = []
+    seen = set()
+    for model_id in model_columns:
+        if model_id not in seen:
+            unique_model_columns.append(model_id)
+            seen.add(model_id)
 
-if __name__ == "__main__":
+    coef_matrix_df = _matrix_dict_to_dataframe(coef_matrix, unique_model_columns)
+    coef_matrix_csv = results_dir / 'final_mlr_coef_matrix.csv'
+    coef_matrix_df.to_csv(coef_matrix_csv, index=False)
+
+    vif_matrix_df = _matrix_dict_to_dataframe(vif_matrix, unique_model_columns)
+    vif_matrix_csv = results_dir / 'final_mlr_vif_matrix.csv'
+    vif_matrix_df.to_csv(vif_matrix_csv, index=False)
+
+    print(f"\n[MLR RUN] Summary saved to: {summary_csv}")
+    print(f"[MLR RUN] Coef matrix saved to: {coef_matrix_csv}")
+    print(f"[MLR RUN] VIF matrix saved to: {vif_matrix_csv}")
+
+
+if __name__ == '__main__':
     main()

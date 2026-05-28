@@ -1,7 +1,7 @@
-import pandas as pd
 import numpy as np
-from statsmodels.stats.outliers_influence import variance_inflation_factor
+import pandas as pd
 import statsmodels.api as sm
+from statsmodels.stats.outliers_influence import variance_inflation_factor
 
 def filter_features_by_vif_with_protection(
     df_subset: pd.DataFrame, 
@@ -106,3 +106,82 @@ def filter_features_by_vif_with_protection(
             print(f"    =================================\n")
 
             return dict(zip(vif_df_sorted['feature'], vif_df_sorted['VIF']))
+
+
+def filter_features_by_vif_with_audit(
+    df_subset: pd.DataFrame,
+    features: list,
+    protected_features: list = None,
+    thresh: float = 5.0,
+) -> tuple[list, pd.DataFrame]:
+    """Iteratively filter features by VIF and return both the selected feature list and an audit table."""
+    current_features = features.copy()
+    protected_set = set(protected_features) if protected_features else set()
+    feature_state = {
+        feature: {
+            'feature': feature,
+            'vif': np.nan,
+            'selected': True,
+            'protected': feature in protected_set,
+            'drop_iteration': None,
+            'drop_reason': None,
+        }
+        for feature in current_features
+    }
+
+    iteration = 0
+    while current_features:
+        iteration += 1
+        X = df_subset[current_features].dropna()
+        if X.empty:
+            raise ValueError('VIF filtering failed because the active feature set became empty after dropping NaNs.')
+
+        if X.shape[1] == 1:
+            feature_name = X.columns[0]
+            vif_value = variance_inflation_factor(sm.add_constant(X, has_constant='add').values, 1)
+            feature_state[feature_name]['vif'] = float(vif_value)
+            return current_features, pd.DataFrame([feature_state[feature_name] for feature_name in features])
+
+        X_with_const = sm.add_constant(X, has_constant='add')
+        vif_records = []
+        for column_name in X.columns:
+            idx = X_with_const.columns.get_loc(column_name)
+            try:
+                vif_value = variance_inflation_factor(X_with_const.values, idx)
+            except Exception:
+                vif_value = np.nan
+            vif_records.append({'feature': column_name, 'vif': float(vif_value) if pd.notna(vif_value) else np.nan})
+
+        for record in vif_records:
+            feature_state[record['feature']]['vif'] = record['vif']
+
+        invalid_records = [record for record in vif_records if pd.isna(record['vif']) or np.isinf(record['vif'])]
+        if invalid_records:
+            drop_record = next((record for record in invalid_records if record['feature'] not in protected_set), None)
+            if drop_record is None:
+                protected_invalid = [record['feature'] for record in invalid_records]
+                raise ValueError(
+                    'VIF filtering cannot continue because the remaining invalid features are protected: '
+                    f'{protected_invalid}'
+                )
+            current_features.remove(drop_record['feature'])
+            feature_state[drop_record['feature']]['selected'] = False
+            feature_state[drop_record['feature']]['drop_iteration'] = iteration
+            feature_state[drop_record['feature']]['drop_reason'] = 'nan_or_inf'
+            continue
+
+        candidates = [record for record in vif_records if record['vif'] > thresh and record['feature'] not in protected_set]
+        if not candidates:
+            break
+
+        max_vif = max(record['vif'] for record in candidates)
+        top_candidates = [record for record in candidates if record['vif'] == max_vif]
+        drop_record = min(top_candidates, key=lambda record: current_features.index(record['feature']))
+        current_features.remove(drop_record['feature'])
+        feature_state[drop_record['feature']]['selected'] = False
+        feature_state[drop_record['feature']]['drop_iteration'] = iteration
+        feature_state[drop_record['feature']]['drop_reason'] = f'vif_gt_{thresh}'
+
+    vif_table = pd.DataFrame([feature_state[feature] for feature in features])
+    vif_table['vif'] = pd.to_numeric(vif_table['vif'], errors='coerce')
+    return current_features, vif_table
