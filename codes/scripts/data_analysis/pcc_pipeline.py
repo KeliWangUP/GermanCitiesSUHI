@@ -1,6 +1,4 @@
 import pandas as pd
-import numpy as np
-import geopandas as gpd
 import matplotlib.pyplot as plt
 import seaborn as sns
 from pathlib import Path
@@ -10,7 +8,7 @@ import string
 
 # 1. 配置路径和参数
 GRID_SIZES = [100, 250, 500, 750, 1000]
-UNIFIED_DIR = Path("../../data/unified_scale_matrices").resolve()
+UNIFIED_DIR = Path("../../../data/unified_scale_matrices").resolve()
 TARGET_VAR = "SUHI"  # 假设你的因变量列名
 name_mapping_dict = {'10': 'tree_cover', 
                      '20': 'shrubland',
@@ -104,9 +102,19 @@ for i, (group_name, features) in enumerate(feature_groups.items()):
     group_data = plot_df[plot_df["Feature"].isin(features)]
     
     if not group_data.empty:
-        sns.lineplot(data=group_data, x="Scale", y="Correlation", hue="Feature", 
-                     marker="o", ax=ax, palette=MORANDI_PALETTE, linewidth=2, markersize=5.5)
-        
+        # 分离显著/不显著：显著保持原样，不显著用灰色虚线弱化显示
+        df_sig = group_data[group_data['Is_Significant'] == True]
+        df_nonsig = group_data[group_data['Is_Significant'] == False]
+
+        if not df_sig.empty:
+            sns.lineplot(data=df_sig, x="Scale", y="Correlation", hue="Feature", 
+                         marker="o", ax=ax, palette=MORANDI_PALETTE, linewidth=2, markersize=5.5)
+
+        # 将不显著的变量绘制为灰色虚线（不加入图例以保持简洁）
+        if not df_nonsig.empty:
+            for feat, sub in df_nonsig.groupby("Feature"):
+                ax.plot(sub['Scale'], sub['Correlation'], linestyle='--', marker='o', markersize=4, color='0.6', alpha=0.7)
+
         ax.axhline(0, color='black', linestyle='--', alpha=0.3)
         ax.set_title(group_name, fontsize=13, pad=10)
         ax.set_xticks(GRID_SIZES)
@@ -142,12 +150,12 @@ for i, (group_name, features) in enumerate(feature_groups.items()):
             ax.set_xlabel("")
             ax.set_xticklabels([]) 
             
-        # 图例圆点擦除
+        # 图例仅显示显著变量，去掉图例圆点
         leg = ax.legend(fontsize=9, loc='lower right', frameon=False)
-        for handle in leg.legend_handles:
-            handle.set_marker('None')
-        # move legend a little bit lower to prevent overlapping with the last data point
-        leg.set_bbox_to_anchor((1.01, -0.01))  # 调整图例位置，向下移动一点
+        if leg is not None:
+            for handle in leg.legend_handles:
+                handle.set_marker('None')
+            leg.set_bbox_to_anchor((1.01, -0.01))  # 调整图例位置，向下移动一点
 
 for j in range(i + 1, len(axes_flat)):
     axes_flat[j].axis('off')
@@ -156,5 +164,5 @@ sns.despine()
 plt.tight_layout()
 
 # 物理落盘推荐：高分辨率存盘，可以直接扔进 LaTeX 论文中
-plt.savefig("multi_panel_scale_sensitivity_abc.png", bbox_inches='tight', dpi=300)
+plt.savefig('../../../data/results/pcc.pdf', format='pdf', bbox_inches='tight')
 # plt.show()
