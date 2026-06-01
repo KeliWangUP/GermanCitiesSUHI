@@ -20,7 +20,7 @@ def _partition_configs(cz_values: list[str]) -> list[dict]:
         configs.append(
             {
                 'partition_label': f'Zone_{value}',
-                'split_strategy': 'group',
+                'split_strategy': 'stratified_group',
                 'filter_value': value,
             }
         )

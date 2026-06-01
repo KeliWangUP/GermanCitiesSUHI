@@ -288,9 +288,14 @@ def run_shap_from_results_csv(
 
 	run_rows = []
 	for idx, row in df_results.iterrows():
-		climate_zone = row.get('climate_zone', 'NA')
+		partition = row.get('partition', 'NA')
 		scale_m = row.get('scale_m', 'NA')
-		model_tag = f'CZ_{climate_zone}_scale_{scale_m}m'
+		if partition == 'Global':
+			model_tag = f'Global_scale_{scale_m}m'
+		else:
+			cz_val = str(partition).replace('Zone_', '')
+			model_tag = f'CZ_{cz_val}_scale_{scale_m}m'
+		
 		run_dir = output_root / str(model_tag)
 
 		if verbose:
@@ -312,7 +317,7 @@ def run_shap_from_results_csv(
 
 		run_rows.append(
 			{
-				'climate_zone': climate_zone,
+				'partition': partition,
 				'scale_m': scale_m,
 				'feature_mode': row.get('feature_mode'),
 				'run_dir': str(run_dir),
