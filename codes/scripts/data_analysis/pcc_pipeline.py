@@ -68,7 +68,8 @@ feature_groups = {"Composition (PLAND)": ["PLAND_tree_cover", "PLAND_built_up", 
                   "Configuration (LSI)": ["LSI_tree_cover", "LSI_built_up", "LSI_grassland", "LSI_water"],
                   "Configuration (LPI)": ["LPI_tree_cover", "LPI_built_up", "LPI_grassland", "LPI_water"],
                   "Diversity & Complexity": ["SHDI", "CONTAG"],
-                  "Construction & 3D": ["isa_fraction", "BCR", "building_height_mean"],
+                  "Construction": ["isa_fraction", "BCR"],
+                  "3D": ["building_height_mean"],
                   "Socio-economics": ["pop_sum"]}
 
 results_global = []
@@ -122,24 +123,123 @@ for scale in GRID_SIZES:
 
 MORANDI_PALETTE = ["#A3BE8C", "#BF616A", "#B48EAD", "#5E81AC", "#D08770"]
 
+# def plot_pcc_results(results_list, scope_name):
+#     if not results_list:
+#         print(f"No results to plot for {scope_name}")
+#         return
+        
+#     plot_df = pd.DataFrame(results_list)
+#     # Apply friendly labels
+#     plot_df["FeatureLabel"] = plot_df["Feature"].apply(get_label)
+    
+#     sns.set_palette(MORANDI_PALETTE)
+#     cols = 4
+#     rows = math.ceil(len(feature_groups) / cols)
+
+#     fig, axes = plt.subplots(nrows=rows, ncols=cols, figsize=(13, 5 * rows), dpi=150)
+#     sns.set_style("ticks")
+
+#     axes_flat = axes.flatten()
+#     sub_labels = list(string.ascii_lowercase)
+
+#     for i, (group_name, features) in enumerate(feature_groups.items()):
+#         ax = axes_flat[i]
+#         row_idx = i // cols
+#         col_idx = i % cols
+        
+#         group_data = plot_df[plot_df["Feature"].isin(features)]
+        
+#         if not group_data.empty:
+#             df_sig = group_data[group_data['Is_Significant'] == True]
+#             df_nonsig = group_data[group_data['Is_Significant'] == False]
+
+#             if not df_sig.empty:
+#                 sns.lineplot(data=df_sig, x="Scale", y="Correlation", hue="FeatureLabel", 
+#                              marker="o", ax=ax, palette=MORANDI_PALETTE[:len(df_sig["FeatureLabel"].unique())], linewidth=2, markersize=5.5)
+
+#             if not df_nonsig.empty:
+#                 for feat, sub in df_nonsig.groupby("FeatureLabel"):
+#                     ax.plot(sub['Scale'], sub['Correlation'], linestyle='--', marker='o', markersize=4, color='0.6', alpha=0.7)
+
+#             ax.axhline(0, color='black', linestyle='--', alpha=0.3)
+#             ax.set_title(group_name, fontsize=13, pad=10)
+#             ax.set_xticks(GRID_SIZES)
+#             ax.set_ylim(-1, 1)
+            
+#             ax.text(0.03, 0.98, f"({sub_labels[i]})", 
+#                     transform=ax.transAxes, 
+#                     fontsize=16, 
+#                     fontweight='bold', 
+#                     va='top', 
+#                     ha='left',
+#                     bbox=dict(facecolor='white', alpha=0.7, edgecolor='none', pad=2))
+            
+#             if col_idx == 0:
+#                 ax.set_ylabel("Pearson r", fontsize=11)
+#             else:
+#                 ax.set_ylabel("")
+#                 ax.set_yticklabels([])
+                
+#             is_last_row = (row_idx == rows - 1)
+#             has_no_sub_plot_below = (i + cols >= len(feature_groups))
+            
+#             if is_last_row or has_no_sub_plot_below:
+#                 ax.set_xlabel("Scale (m)", fontsize=11)
+#             else:
+#                 ax.set_xlabel("")
+#                 ax.set_xticklabels([]) 
+                
+#             leg = ax.legend(fontsize=9, loc='lower right', frameon=False)
+#             if leg is not None:
+#                 for handle in leg.legend_handles:
+#                     handle.set_marker('None')
+#                 leg.set_bbox_to_anchor((1.01, -0.01))
+
+#     for j in range(i + 1, len(axes_flat)):
+#         axes_flat[j].axis('off')
+
+#     sns.despine()
+#     fig.suptitle(f"Pearson Correlation with SUHI - {scope_name}", fontsize=16, fontweight='bold', y=1.02)
+#     plt.tight_layout()
+
+#     out_pdf = f'../../../data/results/paper_figures/pcc_{scope_name}.pdf'
+#     out_png = f'../../../data/results/paper_figures/pcc_{scope_name}.png'
+#     Path(out_pdf).parent.mkdir(parents=True, exist_ok=True)
+#     plt.savefig(out_pdf, format='pdf', bbox_inches='tight')
+#     plt.savefig(out_png, format='png', bbox_inches='tight')
+#     plt.close()
+#     print(f"Saved {out_pdf} and {out_png}")
+
+# print("Plotting Global...")
+# plot_pcc_results(results_global, "Global")
+# print("Plotting Climate Zone 15...")
+# plot_pcc_results(results_cz15, "Climate-Zone-15")
+# print("Plotting Climate Zone 26...")
+# plot_pcc_results(results_cz26, "Climate-Zone-26")
+
+
+
 def plot_pcc_results(results_list, scope_name):
     if not results_list:
         print(f"No results to plot for {scope_name}")
         return
         
     plot_df = pd.DataFrame(results_list)
-    # Apply friendly labels
     plot_df["FeatureLabel"] = plot_df["Feature"].apply(get_label)
     
-    sns.set_palette(MORANDI_PALETTE)
-    cols = 4
+    cols = 3
     rows = math.ceil(len(feature_groups) / cols)
 
-    fig, axes = plt.subplots(nrows=rows, ncols=cols, figsize=(13, 5 * rows), dpi=150)
-    sns.set_style("ticks")
-
+    # RULE 1: Rescale canvas to academic standards (Width=6.5 inches for single-column page)
+    # Height per row is adaptive (~2.0 inches per row provides optimal grid proportions)
+    fig, axes = plt.subplots(nrows=rows, ncols=cols, figsize=(6.5, 3.0 * rows), dpi=300)
+    
     axes_flat = axes.flatten()
     sub_labels = list(string.ascii_lowercase)
+    
+    # Scale down text sizes for tight 4-column subplots grid
+    FONT_SIZE = 10
+    FRAME_WIDTH = 0.8
 
     for i, (group_name, features) in enumerate(feature_groups.items()):
         ax = axes_flat[i]
@@ -152,67 +252,89 @@ def plot_pcc_results(results_list, scope_name):
             df_sig = group_data[group_data['Is_Significant'] == True]
             df_nonsig = group_data[group_data['Is_Significant'] == False]
 
+            # Plot significant correlations
             if not df_sig.empty:
-                sns.lineplot(data=df_sig, x="Scale", y="Correlation", hue="FeatureLabel", 
-                             marker="o", ax=ax, palette=MORANDI_PALETTE[:len(df_sig["FeatureLabel"].unique())], linewidth=2, markersize=5.5)
+                sns.lineplot(
+                    data=df_sig, x="Scale", y="Correlation", hue="FeatureLabel", 
+                    marker="o", ax=ax, palette=MORANDI_PALETTE[:len(df_sig["FeatureLabel"].unique())], 
+                    linewidth=1.2, markersize=3.5
+                )
 
+            # Plot non-significant correlations (Gray background trends)
             if not df_nonsig.empty:
                 for feat, sub in df_nonsig.groupby("FeatureLabel"):
-                    ax.plot(sub['Scale'], sub['Correlation'], linestyle='--', marker='o', markersize=4, color='0.6', alpha=0.7)
+                    ax.plot(sub['Scale'], sub['Correlation'], linestyle='--', 
+                            marker='o', markersize=2.5, color='0.6', alpha=0.6, linewidth=0.8)
 
-            ax.axhline(0, color='black', linestyle='--', alpha=0.3)
-            ax.set_title(group_name, fontsize=13, pad=10)
+            # Baseline and text markers
+            ax.axhline(0, color='black', linestyle=':', alpha=0.4, linewidth=0.8)
+            ax.set_title(group_name, fontsize=FONT_SIZE, fontweight='bold', pad=8)
             ax.set_xticks(GRID_SIZES)
             ax.set_ylim(-1, 1)
             
-            ax.text(0.03, 0.98, f"({sub_labels[i]})", 
-                    transform=ax.transAxes, 
-                    fontsize=16, 
-                    fontweight='bold', 
-                    va='top', 
-                    ha='left',
-                    bbox=dict(facecolor='white', alpha=0.7, edgecolor='none', pad=2))
+            # Subplot label position index adjustments
+            ax.text(0.05, 0.95, f"({sub_labels[i]})", transform=ax.transAxes, 
+                    fontsize=FONT_SIZE, fontweight='bold', va='top', ha='left',
+                    bbox=dict(facecolor='white', alpha=0.8, edgecolor='none', pad=1))
             
-            if col_idx == 0:
-                ax.set_ylabel("Pearson r", fontsize=11)
-            else:
-                ax.set_ylabel("")
-                ax.set_yticklabels([])
+            # Conditional text axis rendering (keeps outer margins tidy)
+            ax.set_ylabel("Pearson r" if col_idx == 0 else "", fontsize=FONT_SIZE, fontweight='bold')
+            if col_idx > 0:
+                ax.tick_params(axis="y", labelleft=False) # Hide labels but preserve ticks
                 
             is_last_row = (row_idx == rows - 1)
             has_no_sub_plot_below = (i + cols >= len(feature_groups))
             
-            if is_last_row or has_no_sub_plot_below:
-                ax.set_xlabel("Scale (m)", fontsize=11)
-            else:
-                ax.set_xlabel("")
-                ax.set_xticklabels([]) 
+            ax.set_xlabel("Scale (m)" if (is_last_row or has_no_sub_plot_below) else "", 
+                          fontsize=FONT_SIZE, fontweight='bold')
+            if not (is_last_row or has_no_sub_plot_below):
+                ax.tick_params(axis="x", labelbottom=False)
                 
-            leg = ax.legend(fontsize=9, loc='lower right', frameon=False)
+            # Local tight legend optimization
+            leg = ax.legend(fontsize=FONT_SIZE - 2, loc='lower right', frameon=False, 
+                            handletextpad=0.3, labelspacing=0.2)
             if leg is not None:
                 for handle in leg.legend_handles:
                     handle.set_marker('None')
-                leg.set_bbox_to_anchor((1.01, -0.01))
 
+    # Turn off unused ax frames completely
     for j in range(i + 1, len(axes_flat)):
         axes_flat[j].axis('off')
 
-    sns.despine()
-    fig.suptitle(f"Pearson Correlation with SUHI - {scope_name}", fontsize=16, fontweight='bold', y=1.02)
-    plt.tight_layout()
+    # RULE 2: Enforce Full Box Spines and Inward Ticks Post-Processing Block
+    # This architecture overrides any default Seaborn template parameters safely
+    for idx in range(len(feature_groups)):
+        ax = axes_flat[idx]
+        for spine in ['top', 'bottom', 'left', 'right']:
+            ax.spines[spine].set_visible(True)
+            ax.spines[spine].set_linewidth(FRAME_WIDTH)
+            
+        ax.tick_params(axis="both", labelsize=FONT_SIZE - 1, 
+                       width=FRAME_WIDTH, length=2.5)
+
+    # Note: Global title setup updated using standard fig.suptitle configuration 
+    # Fontsize adjusted to 11 to match standard caption text size elegantly
+    # fig.suptitle(f"Pearson Correlation with SUHI - {scope_name}", 
+    #              fontsize=11, fontweight='bold', y=0.99)
+    
+    # Adjust layout padding constraints to secure header spacing
+    plt.tight_layout(rect=[0, 0, 1, 0.97])
 
     out_pdf = f'../../../data/results/paper_figures/pcc_{scope_name}.pdf'
     out_png = f'../../../data/results/paper_figures/pcc_{scope_name}.png'
     Path(out_pdf).parent.mkdir(parents=True, exist_ok=True)
+    
     plt.savefig(out_pdf, format='pdf', bbox_inches='tight')
     plt.savefig(out_png, format='png', bbox_inches='tight')
     plt.close()
     print(f"Saved {out_pdf} and {out_png}")
-
-print("Plotting Global...")
-plot_pcc_results(results_global, "Global")
-print("Plotting Climate Zone 15...")
-plot_pcc_results(results_cz15, "Climate-Zone-15")
-print("Plotting Climate Zone 26...")
-plot_pcc_results(results_cz26, "Climate-Zone-26")
-
+if __name__ == "__main__":
+    if results_global:
+        print("Plotting Global...")
+        plot_pcc_results(results_global, "Global")
+    if results_cz15:
+        print("Plotting CZ15...")
+        plot_pcc_results(results_cz15, "CZ15")
+    if results_cz26:
+        print("Plotting CZ26...")
+        plot_pcc_results(results_cz26, "CZ26")

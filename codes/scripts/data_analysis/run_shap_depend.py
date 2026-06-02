@@ -28,8 +28,8 @@ COL_TITLES = ["Global", "Climate Zone 15", "Climate Zone 26"]
 
 SAMPLE_SIZE = 3000
 
-FIG_WIDTH  = 22
-FIG_HEIGHT = 36
+FIG_WIDTH  = 6.5
+FIG_HEIGHT = 10
 
 FEAT_LABELS: dict[str, str] = {
     "isa_fraction":           "ISA fraction",
@@ -106,6 +106,164 @@ def _norm_feature(vals: np.ndarray) -> np.ndarray:
     normed = (vals - lo) / (hi - lo)
     return np.clip(normed, 0.0, 1.0).astype(float)
 
+# def _plot_depend_cell(
+#     ax: plt.Axes,
+#     shap_df: pd.DataFrame,
+#     x_df: pd.DataFrame,
+#     target_feature: str,
+#     *,
+#     panel_label: str,
+#     seed: int = 0,
+# ) -> None:
+#     if target_feature not in x_df.columns:
+#         ax.text(0.5, 0.5, f"'{_label(target_feature)}'\nnot selected by VIF", 
+#                 ha='center', va='center', fontsize=9, color='#888888')
+#         ax.set_xticks([])
+#         ax.set_yticks([])
+#         ax.spines["right"].set_visible(True)
+#         ax.spines["top"].set_visible(True)
+#         ax.text(0.02, 0.98, f"({panel_label})", transform=ax.transAxes,
+#                 fontsize=10, fontweight="bold", va="top", ha="left")
+#         ax.set_facecolor("#f9f9f9")
+#         return
+
+#     rng = np.random.default_rng(seed)
+#     n = len(shap_df)
+#     if n > SAMPLE_SIZE:
+#         idx = rng.choice(n, SAMPLE_SIZE, replace=False)
+#         shap_sub = shap_df.iloc[idx].reset_index(drop=True)
+#         x_sub    = x_df.iloc[idx].reset_index(drop=True)
+#     else:
+#         shap_sub, x_sub = shap_df.reset_index(drop=True), x_df.reset_index(drop=True)
+
+#     ind = x_df.columns.get_loc(target_feature)
+#     int_ind = shap.utils.approximate_interactions(ind, shap_sub.values, x_sub.values)[0]
+#     int_feature = x_sub.columns[int_ind]
+
+#     sv = shap_sub[target_feature].values.astype(float)
+#     fv = x_sub[target_feature].values.astype(float)
+#     int_v = x_sub[int_feature].values.astype(float)
+
+#     cmap_obj = shap.plots.colors.red_blue
+#     norm_obj = Normalize(vmin=0, vmax=1)
+#     colors = cmap_obj(norm_obj(_norm_feature(int_v)))
+
+#     # jitter discrete values slightly in x if few unique values
+#     unique_vals = len(np.unique(fv))
+#     if unique_vals < 15:
+#         width = (np.max(fv) - np.min(fv)) if unique_vals > 1 else 1.0
+#         fv_jit = fv + rng.uniform(-0.02 * width, 0.02 * width, size=len(fv))
+#     else:
+#         fv_jit = fv
+
+#     ax.scatter(
+#         fv_jit, sv,
+#         c=colors, s=3, alpha=1.0,
+#         linewidths=0, rasterized=True,
+#         zorder=3,
+#     )
+
+#     ax.axhline(0, color="#666666", linewidth=0.8, linestyle="-", zorder=2)
+    
+#     # Text annotation for interaction
+#     ax.text(0.96, 0.95, f"Interaction:\n{_label(int_feature)}", transform=ax.transAxes,
+#             ha="right", va="top", fontsize=8, color="#333333")
+
+#     ax.set_xlabel(f"{_label(target_feature)} value", fontsize=9)
+#     ax.set_ylabel("SHAP value", fontsize=9)
+#     ax.tick_params(axis="both", labelsize=8)
+
+#     ax.text(0.02, 0.98, f"({panel_label})", transform=ax.transAxes,
+#             fontsize=10, fontweight="bold", va="top", ha="left")
+
+#     ax.set_facecolor("white")
+#     ax.spines["right"].set_visible(True)
+#     ax.spines["top"].set_visible(True)
+
+
+# def make_figure_for_feature(target_feature: str) -> None:
+#     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+
+#     n_rows = len(SCALES)
+#     n_cols = len(COLUMN_SPECS)
+
+#     fig = plt.figure(figsize=(FIG_WIDTH, FIG_HEIGHT))
+
+#     main_gs = gridspec.GridSpec(
+#         1, 2,
+#         figure=fig,
+#         left=0.1, right=0.96,
+#         top=0.97,  bottom=0.02,
+#         width_ratios=[0.94, 0.015],
+#         wspace=0.025
+#     )
+
+#     axes_gs = main_gs[0, 0].subgridspec(
+#         n_rows, n_cols,
+#         hspace=0.25, 
+#         wspace=0.35 
+#     )
+
+#     cbar_gs = main_gs[0, 1].subgridspec(
+#         n_rows, 1,
+#         hspace=0.25
+#     )
+
+#     curr_plot_idx = 0
+#     for ri, scale in enumerate(SCALES):
+#         for ci, (scope, cz) in enumerate(COLUMN_SPECS):
+#             shap_df, x_df = _load(scale, scope, cz)
+
+#             ax = fig.add_subplot(axes_gs[ri, ci])
+
+#             if ri == 0:
+#                 ax.set_title(
+#                     COL_TITLES[ci],
+#                     fontsize=10, fontweight="bold",
+#                     pad=18,
+#                 )
+
+#             panel_lbl = chr(ord('a') + curr_plot_idx)
+#             curr_plot_idx += 1
+
+#             _plot_depend_cell(
+#                 ax,
+#                 shap_df, x_df, target_feature,
+#                 panel_label=panel_lbl,
+#                 seed=ri * 10 + ci,
+#             )
+
+#         ss_row   = axes_gs[ri, 0]
+#         bbox_row = ss_row.get_position(fig)
+#         y_mid    = (bbox_row.y0 + bbox_row.y1) / 2
+#         x_pos    = bbox_row.x0 - 0.09
+#         fig.text(
+#             x_pos, y_mid,
+#             f"{scale} m",
+#             ha="right", va="center",
+#             fontsize=10, fontweight="bold",
+#             rotation=90,
+#             transform=fig.transFigure,
+#         )
+
+#         cbar_ax = fig.add_subplot(cbar_gs[ri, 0])
+#         sm = ScalarMappable(cmap=shap.plots.colors.red_blue, norm=Normalize(0, 1))
+#         sm.set_array([])
+#         cbar = fig.colorbar(sm, cax=cbar_ax)
+#         cbar.outline.set_visible(False)
+#         cbar.set_label("Interaction\nFeature value", fontsize=9, rotation=270, labelpad=15)
+#         cbar.set_ticks([0, 1])
+#         cbar.set_ticklabels(["Low", "High"], fontsize=8)
+#         cbar.ax.tick_params(labelsize=8)
+
+#     safe_name = target_feature.replace("_", "-")
+#     out_pdf = OUTPUT_DIR / f"shap_depend_{safe_name}_5x3.pdf"
+#     out_png = OUTPUT_DIR / f"shap_depend_{safe_name}_5x3.png"
+#     fig.savefig(out_pdf, dpi=150, bbox_inches="tight")
+#     fig.savefig(out_png, dpi=150, bbox_inches="tight")
+#     plt.close(fig)
+
+#     print(f"Saved: {out_png}")
 def _plot_depend_cell(
     ax: plt.Axes,
     shap_df: pd.DataFrame,
@@ -114,16 +272,17 @@ def _plot_depend_cell(
     *,
     panel_label: str,
     seed: int = 0,
+    show_ylabel: bool = True,  # FIX 1: Add a toggle to control left Y-axis visibility
 ) -> None:
     if target_feature not in x_df.columns:
         ax.text(0.5, 0.5, f"'{_label(target_feature)}'\nnot selected by VIF", 
-                ha='center', va='center', fontsize=16, color='#888888')
+                ha='center', va='center', fontsize=9, color='#888888')
         ax.set_xticks([])
         ax.set_yticks([])
         ax.spines["right"].set_visible(True)
         ax.spines["top"].set_visible(True)
         ax.text(0.02, 0.98, f"({panel_label})", transform=ax.transAxes,
-                fontsize=18, fontweight="bold", va="top", ha="left")
+                fontsize=10, fontweight="bold", va="top", ha="left")
         ax.set_facecolor("#f9f9f9")
         return
 
@@ -148,7 +307,6 @@ def _plot_depend_cell(
     norm_obj = Normalize(vmin=0, vmax=1)
     colors = cmap_obj(norm_obj(_norm_feature(int_v)))
 
-    # jitter discrete values slightly in x if few unique values
     unique_vals = len(np.unique(fv))
     if unique_vals < 15:
         width = (np.max(fv) - np.min(fv)) if unique_vals > 1 else 1.0
@@ -158,28 +316,33 @@ def _plot_depend_cell(
 
     ax.scatter(
         fv_jit, sv,
-        c=colors, s=12, alpha=1.0,
+        c=colors, s=2, alpha=1.0,
         linewidths=0, rasterized=True,
         zorder=3,
     )
 
-    ax.axhline(0, color="#666666", linewidth=0.8, linestyle="-", zorder=2)
+    ax.axhline(0, color="#666666", linewidth=0.8, linestyle=":", alpha=0.5, zorder=2)
     
-    # Text annotation for interaction
     ax.text(0.96, 0.95, f"Interaction:\n{_label(int_feature)}", transform=ax.transAxes,
-            ha="right", va="top", fontsize=14, color="#333333")
+            ha="right", va="top", fontsize=8, color="#333333")
 
-    ax.set_xlabel(f"{_label(target_feature)} value", fontsize=16)
-    ax.set_ylabel("SHAP value", fontsize=16)
-    ax.tick_params(axis="both", labelsize=14)
+    ax.set_xlabel(f"{_label(target_feature)} value", fontsize=9)
+    
+    # FIX 2: Enforce a single column style rule for Y labels and numbers
+    if show_ylabel:
+        ax.set_ylabel("SHAP value", fontsize=9)
+    else:
+        ax.set_ylabel("")
 
-    ax.text(0.02, 0.98, f"({panel_label})", transform=ax.transAxes,
-            fontsize=18, fontweight="bold", va="top", ha="left")
+    # Enforce inward ticks and standard frames
+    ax.tick_params(axis="both", labelsize=8, labelleft=show_ylabel) # labelleft dynamically toggles numbers
+
+    ax.text(0.98, 0.02, f"({panel_label})", transform=ax.transAxes,
+            fontsize=10, fontweight="bold", va="bottom", ha="right")
 
     ax.set_facecolor("white")
     ax.spines["right"].set_visible(True)
     ax.spines["top"].set_visible(True)
-
 
 def make_figure_for_feature(target_feature: str) -> None:
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
@@ -189,6 +352,7 @@ def make_figure_for_feature(target_feature: str) -> None:
 
     fig = plt.figure(figsize=(FIG_WIDTH, FIG_HEIGHT))
 
+    # [UNCHANGED] Maintain your precise layout ratios and geometry parameters
     main_gs = gridspec.GridSpec(
         1, 2,
         figure=fig,
@@ -210,17 +374,23 @@ def make_figure_for_feature(target_feature: str) -> None:
     )
 
     curr_plot_idx = 0
+    first_col_axes = []  # Tracking list to secure multi-row y-label alignment
+
     for ri, scale in enumerate(SCALES):
         for ci, (scope, cz) in enumerate(COLUMN_SPECS):
             shap_df, x_df = _load(scale, scope, cz)
 
             ax = fig.add_subplot(axes_gs[ri, ci])
 
+            # Collect the first column subplots for label alignment post-processing
+            if ci == 0:
+                first_col_axes.append(ax)
+
             if ri == 0:
                 ax.set_title(
                     COL_TITLES[ci],
-                    fontsize=18, fontweight="bold",
-                    pad=30,
+                    fontsize=10, fontweight="bold",
+                    pad=18,
                 )
 
             panel_lbl = chr(ord('a') + curr_plot_idx)
@@ -233,6 +403,20 @@ def make_figure_for_feature(target_feature: str) -> None:
                 seed=ri * 10 + ci,
             )
 
+            # Style Refinement 1: Unify the left column ylabel logic exclusively
+            if ci == 0:
+                ax.set_ylabel("SHAP value", fontsize=9)
+            else:
+                ax.set_ylabel("")
+
+            # Style Refinement 2: Enforce strict box frames and inward tick rendering
+            for spine in ['top', 'bottom', 'left', 'right']:
+                ax.spines[spine].set_visible(True)
+                ax.spines[spine].set_linewidth(0.8)
+            ax.tick_params(axis="both", direction="in", top=True, right=True, 
+                           labelsize=8, width=0.8)
+
+        # Row label handling using figure-level coordinates
         ss_row   = axes_gs[ri, 0]
         bbox_row = ss_row.get_position(fig)
         y_mid    = (bbox_row.y0 + bbox_row.y1) / 2
@@ -241,30 +425,35 @@ def make_figure_for_feature(target_feature: str) -> None:
             x_pos, y_mid,
             f"{scale} m",
             ha="right", va="center",
-            fontsize=18, fontweight="bold",
+            fontsize=10, fontweight="bold",
             rotation=90,
             transform=fig.transFigure,
         )
 
+        # Colorbar rendering configuration remains stable
         cbar_ax = fig.add_subplot(cbar_gs[ri, 0])
         sm = ScalarMappable(cmap=shap.plots.colors.red_blue, norm=Normalize(0, 1))
         sm.set_array([])
         cbar = fig.colorbar(sm, cax=cbar_ax)
         cbar.outline.set_visible(False)
-        cbar.set_label("Interaction\nFeature value", fontsize=16, rotation=270, labelpad=25)
+        cbar.set_label("Interaction Feature", fontsize=9, rotation=270, labelpad=-8)
         cbar.set_ticks([0, 1])
-        cbar.set_ticklabels(["Low", "High"], fontsize=16)
-        cbar.ax.tick_params(labelsize=16)
+        cbar.set_ticklabels(["Low", "High"], fontsize=8)
+        cbar.ax.tick_params(labelsize=8)
+
+    # Style Refinement 3: Resolve y-axis label misalignments across different rows automatically
+    fig.align_ylabels(first_col_axes)
 
     safe_name = target_feature.replace("_", "-")
     out_pdf = OUTPUT_DIR / f"shap_depend_{safe_name}_5x3.pdf"
     out_png = OUTPUT_DIR / f"shap_depend_{safe_name}_5x3.png"
-    fig.savefig(out_pdf, dpi=150, bbox_inches="tight")
-    fig.savefig(out_png, dpi=150, bbox_inches="tight")
+    
+    # Resolution upgraded to publication grade (DPI=300)
+    fig.savefig(out_pdf, dpi=300, bbox_inches="tight")
+    fig.savefig(out_png, dpi=300, bbox_inches="tight")
     plt.close(fig)
 
     print(f"Saved: {out_png}")
-
 
 if __name__ == "__main__":
     print("[run_shap_depend] Identifying top features across all 15 models...")

@@ -52,11 +52,11 @@ COL_TITLES = ["Global", "Climate Zone 15", "Climate Zone 26"]
 TOP_N       = 10     # top features shown per subplot
 SAMPLE_SIZE = 3000   # scatter sub-sample per subplot
 
-FIG_WIDTH  = 22   # inches
-FIG_HEIGHT = 36   # inches
+FIG_WIDTH  = 8.5   # inches
+FIG_HEIGHT = 14   # inches
 
-# FIG_WIDTH  = 22   # inches
-# FIG_HEIGHT = 6.5   # inches
+# FIG_WIDTH  = 8.5  # inches
+# FIG_HEIGHT = 2.5   # inches
 
 # ── optional readable feature-name map ────────────────────────────────────────
 
@@ -211,8 +211,8 @@ def _plot_cell(
     ax_bar.set_ylim(*y_lim)
     ax_bar.xaxis.tick_top()
     ax_bar.xaxis.set_label_position("top")
-    ax_bar.set_xlabel("Mean |SHAP value|", fontsize=16, labelpad=4)
-    ax_bar.tick_params(axis="x", labelsize=16, top=True)
+    ax_bar.set_xlabel("Mean |SHAP value|", fontsize=8, labelpad=4)
+    ax_bar.tick_params(axis="x", labelsize=6, top=True)
     ax_bar.xaxis.set_major_formatter(mticker.FormatStrFormatter("%.2f"))
     ax_bar.xaxis.set_major_locator(mticker.MaxNLocator(nbins=4, prune="both"))
     ax_bar.spines["right"].set_visible(False)
@@ -233,7 +233,7 @@ def _plot_cell(
         y_jit  = y_base + _shap_jitter(sv, max_width=0.45)
         ax.scatter(
             sv, y_jit,
-            c=colors, s=12, alpha=1.0,  # SHAP style
+            c=colors, s=3, alpha=1.0,  # SHAP style
             linewidths=0, rasterized=True,
             zorder=3,
         )
@@ -244,12 +244,12 @@ def _plot_cell(
     ax.set_ylim(*y_lim)
     ax.set_yticks(y_pos)
     # Always display y-axis labels for each subplot
-    ax.set_yticklabels([_label(f) for f in features], fontsize=16)
+    ax.set_yticklabels([_label(f) for f in features], fontsize=8)
     ax.tick_params(axis="y", length=0)
 
     # primary bottom x-axis (SHAP value)
-    ax.set_xlabel("SHAP value", fontsize=16, labelpad=3)
-    ax.tick_params(axis="x", labelsize=16)
+    ax.set_xlabel("SHAP value", fontsize=8, labelpad=2)
+    ax.tick_params(axis="x", labelsize=8)
     ax.xaxis.set_major_locator(mticker.MaxNLocator(nbins=5, prune="both"))
     
     # We want a closed bounding box around the axes, so don't hide spines here.
@@ -259,7 +259,7 @@ def _plot_cell(
     # Add subplot label (a), (b), (c)... without a bounding box 
     # placed just right at the top left interior
     ax.text(0.02, 0.98, f"({panel_label})", transform=ax.transAxes,
-            fontsize=18, fontweight="bold", va="top", ha="left",
+            fontsize=8, fontweight="bold", va="top", ha="left",
             bbox=None)
 
     # background colour so bars read against white
@@ -281,9 +281,9 @@ def make_figure() -> None:
     main_gs = gridspec.GridSpec(
         1, 2,
         figure=fig,
-        left=0.1, right=0.96,  # Leave enough left margin for row labels
+        left=0.1, right=0.9,  # Leave enough left margin for row labels
         top=0.97,  bottom=0.02,
-        width_ratios=[0.94, 0.015], # 94% width for plots, 1.5% for colorbars
+        width_ratios=[0.94, 0.015], # 94% width for plots, 1.5% for colorbars 
         wspace=0.025                # [CRITICAL] This strictly controls the distance between the last plot column and the colorbar
     )
 
@@ -291,14 +291,14 @@ def make_figure() -> None:
     # We can control hspace and wspace internally without affecting the colorbar position
     axes_gs = main_gs[0, 0].subgridspec(
         n_rows, n_cols,
-        hspace=0.25, 
-        wspace=0.45  # Keep optimized spacing between main columns for y-labels
+        hspace=0.35, 
+        wspace=0.75  # Keep optimized spacing between main columns for y-labels
     )
 
     # 3. Nested GridSpec for the row colorbars (aligned vertically with the main plots)
     cbar_gs = main_gs[0, 1].subgridspec(
         n_rows, 1,
-        hspace=0.25
+        hspace=0.35
     )
 
     # ── iterate rows and columns ───────────────────────────────────────────────
@@ -318,8 +318,8 @@ def make_figure() -> None:
             if ri == 0:
                 ax.set_title(
                     COL_TITLES[ci],
-                    fontsize=18, fontweight="bold",
-                    pad=30,  # push above the top x-axis tick labels
+                    fontsize=8, fontweight="bold",
+                    pad=18,  # push above the top x-axis tick labels
                 )
 
             panel_lbl = chr(ord('a') + curr_plot_idx)
@@ -340,12 +340,12 @@ def make_figure() -> None:
         
         # Using bbox_row.x0 dynamically ensures row labels move automatically if margins change
         # Changed ha to "right" for elegant alignment of text ends
-        x_pos    = bbox_row.x0 - 0.09
+        x_pos    = bbox_row.x0 - 0.12
         fig.text(
             x_pos, y_mid,
             f"{scale} m",
             ha="right", va="center",
-            fontsize=18, fontweight="bold",
+            fontsize=8, fontweight="bold",
             rotation=90,
             transform=fig.transFigure,
         )
@@ -359,16 +359,16 @@ def make_figure() -> None:
         cbar.outline.set_visible(False)
         
         # Adjusted labelpad to avoid overlap between "High/Low" and "Feature value"
-        cbar.set_label("Feature value", fontsize=16, rotation=270, labelpad=-15)
+        cbar.set_label("Feature value", fontsize=8, rotation=270, labelpad=-12)
         cbar.set_ticks([0, 1])
-        cbar.set_ticklabels(["Low", "High"], fontsize=16)
-        cbar.ax.tick_params(labelsize=16)
+        cbar.set_ticklabels(["Low", "High"], fontsize=8)
+        cbar.ax.tick_params(labelsize=8)
 
     # ── save ──────────────────────────────────────────────────────────────────
     out_pdf = OUTPUT_DIR / "shap_composite_5x3.pdf"
     out_png = OUTPUT_DIR / "shap_composite_5x3.png"
-    fig.savefig(out_pdf, dpi=150, bbox_inches="tight")
-    fig.savefig(out_png, dpi=150, bbox_inches="tight")
+    fig.savefig(out_pdf, dpi=300, bbox_inches="tight")
+    fig.savefig(out_png, dpi=300, bbox_inches="tight")
     plt.close(fig)
 
     print(f"\n[paper_vis_shap] Saved → {out_pdf}")
