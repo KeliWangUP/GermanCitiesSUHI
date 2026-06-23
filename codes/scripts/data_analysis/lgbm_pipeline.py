@@ -26,19 +26,40 @@ def _rmse(y_true, y_pred):
 
 
 def _default_param_space():
-    # With ~20 features and sample sizes ranging from 10k to 600k, keep trees compact
-    # and let early stopping find the effective boosting rounds.
+    # Default search space for Optuna TPE and the manual random-search fallback.
     return {
-        'num_leaves': [31, 63, 127, 255],
-        'max_depth': [-1, 6, 8, 10],
-        'learning_rate': [0.01, 0.02, 0.05],
-        'n_estimators': [100, 300, 500, 1000],
-        'subsample': [0.8, 0.9, 1.0],
-        'colsample_bytree': [0.5, 0.7, 0.9],
-        'reg_alpha': [0.1, 0.5, 2.0],
-        'reg_lambda': [0.1, 0.5, 2.0],
-        'min_child_samples': [20, 50, 100],
+        'objective': 'regression',
+        'metric': 'rmse',
+        'verbosity': -1,
+        'boosting_type': 'gbdt',
+        'max_depth': {'type': 'int', 'low': 4, 'high': 10},
+        'num_leaves': {'type': 'int', 'low': 15, 'high': 127},
+        'learning_rate': {'type': 'float', 'low': 0.01, 'high': 0.06},
+        'n_estimators': {'type': 'int', 'low': 300, 'high': 1200, 'step': 100},
+        'subsample': {'type': 'float', 'low': 0.7, 'high': 1.0},
+        'colsample_bytree': {'type': 'float', 'low': 0.4, 'high': 1.0},
+        'reg_alpha': {'type': 'float', 'low': 1e-1, 'high': 10.0, 'log': True},
+        'reg_lambda': {'type': 'float', 'low': 1e-1, 'high': 10.0, 'log': True},
+        'min_child_samples': {'type': 'int', 'low': 20, 'high': 500},
     }
+
+
+def _sample_from_spec(name: str, spec: Any, rng: np.random.RandomState) -> Any:
+    if isinstance(spec, dict) and 'type' in spec:
+        low = spec['low']
+        high = spec['high']
+        if spec['type'] == 'int':
+            step = int(spec.get('step', 1))
+            choices = np.arange(int(low), int(high) + 1, step)
+            return int(choices[rng.randint(0, len(choices))])
+        if spec['type'] == 'float':
+            if spec.get('log', False):
+                return float(np.exp(rng.uniform(np.log(low), np.log(high))))
+            return float(rng.uniform(low, high))
+        raise ValueError(f"Unsupported search spec type for '{name}': {spec['type']}")
+    if isinstance(spec, (list, tuple)):
+        return spec[rng.randint(0, len(spec))]
+    return spec
 
 
 def _resolve_parallelism(
@@ -189,19 +210,39 @@ def _cv_score_for_params(
     return float(np.mean(fold_rmse)), fold_results
 
 
-def _sample_optuna_params(trial, param_space: Dict[str, list], random_state: int):
-    sampled = {
-        key: trial.suggest_categorical(key, values)
-        for key, values in param_space.items()
-    }
+def _sample_optuna_params(trial, param_space: Dict[str, Any], random_state: int):
+    sampled = {}
+    for key, spec in param_space.items():
+        if isinstance(spec, dict) and 'type' in spec:
+            if spec['type'] == 'int':
+                suggest_kwargs = {}
+                if 'step' in spec:
+                    suggest_kwargs['step'] = int(spec['step'])
+                if 'log' in spec:
+                    suggest_kwargs['log'] = bool(spec['log'])
+                sampled[key] = trial.suggest_int(key, int(spec['low']), int(spec['high']), **suggest_kwargs)
+                continue
+            if spec['type'] == 'float':
+                sampled[key] = trial.suggest_float(
+                    key,
+                    float(spec['low']),
+                    float(spec['high']),
+                    log=bool(spec.get('log', False)),
+                )
+                continue
+            raise ValueError(f"Unsupported Optuna search spec type for '{key}': {spec['type']}")
+        if isinstance(spec, (list, tuple)):
+            sampled[key] = trial.suggest_categorical(key, list(spec))
+            continue
+        sampled[key] = spec
     sampled['random_state'] = random_state
     return sampled
 
 
-def _sample_random_params(param_space: Dict[str, list], rng: np.random.RandomState) -> Dict[str, Any]:
+def _sample_random_params(param_space: Dict[str, Any], rng: np.random.RandomState) -> Dict[str, Any]:
     sampled = {}
-    for key, values in param_space.items():
-        sampled[key] = values[rng.randint(0, len(values))]
+    for key, spec in param_space.items():
+        sampled[key] = _sample_from_spec(key, spec, rng)
     return sampled
 
 
@@ -211,7 +252,7 @@ def _tune_with_optuna(
     groups_train: pd.Series,
     cv,
     random_state: int,
-    param_space: Dict[str, list],
+    param_space: Dict[str, Any],
     n_trials: int,
     artifacts_dir: Path,
     verbose: int,
@@ -279,7 +320,7 @@ def _tune_with_random_search(
     groups_train: pd.Series,
     cv,
     random_state: int,
-    param_space: Dict[str, list],
+    param_space: Dict[str, Any],
     n_trials: int,
     verbose: int,
     search_jobs: int,

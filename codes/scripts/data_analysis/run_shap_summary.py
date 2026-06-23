@@ -39,8 +39,8 @@ BASE_SHAP  = Path("/home/GermanCitiesSUHI/data/results/shap_results/selected")
 LGBM_BASE  = Path("/home/GermanCitiesSUHI/data/results/lgbm_results_selected")
 OUTPUT_DIR = Path("/home/GermanCitiesSUHI/data/results/paper_figures/shap_summary")
 
-SCALES = [100, 250, 500, 750, 1000]   # rows top → bottom
-# SCALES = [250] 
+# SCALES = [100, 250, 500, 750, 1000]   # rows top → bottom
+SCALES = [250] 
 
 COLUMN_SPECS = [                       # (scope_dir, climate_zone_or_None)
     ("global",          None),
@@ -52,11 +52,11 @@ COL_TITLES = ["Global", "Climate Zone 15", "Climate Zone 26"]
 TOP_N       = 10     # top features shown per subplot
 SAMPLE_SIZE = 3000   # scatter sub-sample per subplot
 
-FIG_WIDTH  = 8.5   # inches
-FIG_HEIGHT = 14   # inches
+# FIG_WIDTH  = 8.5   # inches
+# FIG_HEIGHT = 14   # inches
 
-# FIG_WIDTH  = 8.5  # inches
-# FIG_HEIGHT = 2.5   # inches
+FIG_WIDTH  = 8.5  # inches
+FIG_HEIGHT = 2.5   # inches
 
 # ── optional readable feature-name map ────────────────────────────────────────
 
@@ -365,8 +365,8 @@ def make_figure() -> None:
         cbar.ax.tick_params(labelsize=8)
 
     # ── save ──────────────────────────────────────────────────────────────────
-    out_pdf = OUTPUT_DIR / "shap_composite_5x3.pdf"
-    out_png = OUTPUT_DIR / "shap_composite_5x3.png"
+    out_pdf = OUTPUT_DIR / "shap_composite_250_5x3.pdf"
+    out_png = OUTPUT_DIR / "shap_composite_250_5x3.png"
     fig.savefig(out_pdf, dpi=300, bbox_inches="tight")
     fig.savefig(out_png, dpi=300, bbox_inches="tight")
     plt.close(fig)

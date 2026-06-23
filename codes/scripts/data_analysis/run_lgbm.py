@@ -96,7 +96,7 @@ def _run_lgbm_partition(partition_label, filter_value, scale, df_scale, pre_vif_
         n_splits=5,
         test_fold=0,
         use_optuna=True,
-        n_trials=10,
+        n_trials=50,
         save_dir=str(save_dir),
         model_n_jobs=4,
         cv_jobs=8,
